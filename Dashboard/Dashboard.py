@@ -11,10 +11,10 @@ st.write('Selamat datang di aplikasi Streamlit Aura. Di sini Anda bisa melihat s
 
 try:
     # --- Memuat data utama yang diperlukan untuk analisis (dari direktori root Colab) ---
-    orders = pd.read_csv('../Data/orders_dataset.csv')
-    order_items = pd.read_csv('../Data/order_items_dataset.csv')
-    products = pd.read_csv('../Data/products_dataset.csv')
-    customers = pd.read_csv('../Data/customers_dataset.csv')
+    orders = pd.read_csv('Data/orders_dataset.csv')
+    order_items = pd.read_csv('Data/order_items_dataset.csv')
+    products = pd.read_csv('Data/products_dataset.csv')
+    customers = pd.read_csv('Data/customers_dataset.csv')
 
     # --- Cleaning data orders seperti di notebook ---
     orders['order_purchase_timestamp'] = pd.to_datetime(orders['order_purchase_timestamp'])
