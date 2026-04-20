@@ -290,6 +290,6 @@ try:
     plt.close(fig7)
 
 except FileNotFoundError:
-    st.error("Beberapa file data tidak ditemukan. Pastikan 'orders_dataset.csv', 'order_items_dataset.csv', 'products_dataset.csv', dan 'customers_dataset.csv' ada di direktori yang sama dengan `app.py`.")
+    st.error("Beberapa file data tidak ditemukan. Pastikan 'orders_dataset.csv', 'order_items_dataset.csv', 'products_dataset.csv', dan 'customers_dataset.csv' ada di direktori yang sama dengan `Dashboard.py`.")
 except Exception as e:
     st.error(f"Terjadi kesalahan saat memuat atau memproses data: {e}")
