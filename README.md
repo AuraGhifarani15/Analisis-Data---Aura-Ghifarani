@@ -18,18 +18,22 @@ Fokus utama analisis mencakup:
 ## Struktur Direktori
 
 Submission Analisis Data - Aura Ghifarani/
-│
-├── Dashboard/
-│ └── Dashboard.py
-│
-├── Data/
-│ ├── orders_dataset.csv
-│ ├── order_items_dataset.csv
-│ ├── products_dataset.csv
-│ └── customers_dataset.csv
-│
-└── Proyek_Analisis_Data_Aura_Ghifarani.ipynb
+Dashboard/
+Dashboard.py
 
+Data/
+orders_dataset.csv
+order_items_dataset.csv
+products_dataset.csv
+customers_dataset.csv
+
+Proyek_Analisis_Data_Aura_Ghifarani.ipynb
+
+README.md
+
+Reqiurements.txt
+
+url.txt
 
 ## Metodologi Analisis
 
