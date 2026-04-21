@@ -422,7 +422,7 @@ elif not rfm_geo_df.empty:
                 ax_city.set_title(f'Top {num_top_geo} Kota Pelanggan {selected_geo_segment}')
                 ax_city.set_xlabel('Kota')
                 ax_city.set_ylabel(f'Jumlah Pelanggan {selected_geo_segment}')
-                ax_city.tick_params(axis='x', rotation=45, ha='right')
+                plt.setp(ax_city.get_xticklabels(), rotation=45, ha='right')
                 st.pyplot(fig_city)
             else:
                 st.info(f"Tidak ada data kota untuk segmen '{selected_geo_segment}'.")
@@ -437,7 +437,7 @@ elif not rfm_geo_df.empty:
                 ax_state.set_title(f'Top {num_top_geo} Negara Bagian Pelanggan {selected_geo_segment}')
                 ax_state.set_xlabel('Negara Bagian')
                 ax_state.set_ylabel(f'Jumlah Pelanggan {selected_geo_segment}')
-                ax_state.tick_params(axis='x', rotation=45, ha='right')
+                plt.setp(ax_state.get_xticklabels(), rotation=45, ha='right')
                 st.pyplot(fig_state)
             else:
                 st.info(f"Tidak ada data negara bagian untuk segmen '{selected_geo_segment}'.")
