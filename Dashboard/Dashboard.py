@@ -121,18 +121,8 @@ def get_translated_product_categories():
 
 main_data_df = load_data()
 
-translation_path = os.path.join(base_path, 'product_category_name_translation.csv')
-translation_df = pd.read_csv(translation_path)
-
-main_data_df = main_data_df.merge(
-    translation_df,
-    on='product_category_name',
-    how='left'
-)
-
-main_data_df['product_category_name'] = main_data_df['product_category_name_english']
-
-main_data_df.drop(columns=['product_category_name_english'], inplace=True)
+category_translation = get_translated_product_categories()
+main_data_df['product_category_name'] = main_data_df['product_category_name'].map(category_translation).fillna('unknown')
 
 
 @st.cache_data
