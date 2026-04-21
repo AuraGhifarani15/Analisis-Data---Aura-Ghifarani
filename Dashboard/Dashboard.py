@@ -12,6 +12,8 @@ st.set_page_config(layout="wide", page_title="E-Commerce Data Analysis Dashboard
 st.title("E-Commerce Data Analysis Dashboard")
 
 # --- Data Loading and Preprocessing ---
+base_path = os.path.dirname(os.path.abspath(__file__))
+
 @st.cache_data
 def load_data():
     # Use os.path.dirname and os.path.join to ensure path is correct regardless of execution context
