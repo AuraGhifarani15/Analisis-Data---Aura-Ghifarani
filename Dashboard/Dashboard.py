@@ -116,15 +116,22 @@ def get_translated_product_categories():
     }
     return category_translation
 
-# --- Load Data ---
+
 main_data_df = load_data()
-category_translation = get_translated_product_categories()
 
-# Apply product category translation after loading
-main_data_df['product_category_name'] = main_data_df['product_category_name'].map(category_translation).fillna('unknown')
+translation_path = os.path.join(base_path, 'product_category_name_translation.csv')
+translation_df = pd.read_csv(translation_path)
 
+main_data_df = main_data_df.merge(
+    translation_df,
+    on='product_category_name',
+    how='left'
+)
 
-# --- Functions for Analysis (copied and adapted from notebook) ---
+main_data_df['product_category_name'] = main_data_df['product_category_name_english']
+
+main_data_df.drop(columns=['product_category_name_english'], inplace=True)
+
 
 @st.cache_data
 def get_revenue_analysis(df, selected_year):
