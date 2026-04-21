@@ -1,31 +1,42 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import datetime as dt
-import os
 
-st.set_page_config(layout="wide")
-st.title('Analisis Data E-Commerce Anda')
-st.write('Selamat datang di aplikasi Streamlit Aura. Di sini Anda bisa melihat semua hasil analisis.')
+# --- Page Configuration ---
+st.set_page_config(layout="wide", page_title="E-Commerce Data Analysis Dashboard")
 
-try:
-    # --- Memuat data utama yang diperlukan untuk analisis (dari direktori root Colab) ---
-    orders = pd.read_csv('Data/orders_dataset.csv')
-    order_items = pd.read_csv('Data/order_items_dataset.csv')
-    products = pd.read_csv('Data/products_dataset.csv')
-    customers = pd.read_csv('Data/customers_dataset.csv')
+st.title("E-Commerce Data Analysis Dashboard")
 
-    # --- Cleaning data orders seperti di notebook ---
-    orders['order_purchase_timestamp'] = pd.to_datetime(orders['order_purchase_timestamp'])
-    orders = orders.dropna()
+# --- Data Loading and Preprocessing ---
+@st.cache_data
+def load_data():
+    df = pd.read_csv('main_data.csv')
+    
+    # Convert date columns (assuming these are the relevant ones from the notebook)
+    date_cols = [
+        'order_purchase_timestamp', 'order_approved_at',
+        'order_delivered_carrier_date', 'order_delivered_customer_date',
+        'order_estimated_delivery_date', 'shipping_limit_date'
+    ]
+    for col in date_cols:
+        df[col] = pd.to_datetime(df[col], errors='coerce') # Use errors='coerce' to handle any parsing issues gracefully
+    
+    # Fill numerical product NaNs (as done in notebook cleaning)
+    numerical_product_cols = [
+        'product_name_lenght', 'product_description_lenght', 'product_photos_qty',
+        'product_weight_g', 'product_length_cm', 'product_height_cm', 'product_width_cm'
+    ]
+    for col in numerical_product_cols:
+        df[col] = df[col].fillna(0)
 
-    # --- Persiapan Data untuk Analisis Revenue ---
-    orders_items_df = pd.merge(orders, order_items, on='order_id', how='inner')
-    df_revenue_analysis = pd.merge(orders_items_df, products, on='product_id', how='inner')
-    df_revenue_analysis['order_purchase_timestamp'] = pd.to_datetime(df_revenue_analysis['order_purchase_timestamp'])
+    return df
 
-    # Kamus terjemahan untuk nama kategori produk (Lengkap seperti di notebook)
+@st.cache_data
+def get_translated_product_categories():
+    # This dictionary is directly copied from the notebook's cleaning section
     category_translation = {
         'beleza_saude': 'Beauty & Health',
         'relogios_presentes': 'Watches & Gifts',
@@ -97,31 +108,35 @@ try:
         'fraldas': 'Diapers',
         'livros_generais': 'General Books'
     }
-    df_revenue_analysis['product_category_name_english'] = df_revenue_analysis['product_category_name'].map(category_translation).fillna(df_revenue_analysis['product_category_name'])
+    return category_translation
 
-    # =========================
-    # 📊 1. REVENUE ANALYSIS
-    # =========================
-    st.header('1. Analisis Revenue Produk')
-    st.subheader('Top 10 Kategori Produk Berdasarkan Revenue')
-    category_revenue = df_revenue_analysis.groupby('product_category_name_english')['price'].sum().reset_index()
-    category_revenue.rename(columns={'price': 'total_revenue', 'product_category_name_english': 'product_category_name'}, inplace=True)
+main_data_df = load_data()
+category_translation = get_translated_product_categories()
+
+# Apply product category translation after loading
+main_data_df['product_category_name'] = main_data_df['product_category_name'].map(category_translation).fillna('unknown')
+
+
+# --- Functions for Analysis (copied and adapted from notebook) ---
+
+@st.cache_data
+def get_revenue_analysis(df, selected_year):
+    df_revenue_analysis = df[df['order_purchase_timestamp'].dt.year == selected_year].copy()
+    
+    if df_revenue_analysis.empty:
+        return pd.DataFrame(), pd.DataFrame(), "No data available for the selected year."
+
+    category_revenue = df_revenue_analysis.groupby('product_category_name')['price'].sum().reset_index()
+    category_revenue.rename(columns={'price': 'total_revenue'}, inplace=True)
     category_revenue = category_revenue.sort_values(by='total_revenue', ascending=False)
-
-    fig1, ax1 = plt.subplots(figsize=(12, 7))
-    sns.barplot(x='total_revenue', y='product_category_name', data=category_revenue.head(10), palette='viridis', hue='product_category_name', legend=False, ax=ax1)
-    ax1.set_title('Top 10 Product Categories by Revenue')
-    ax1.set_xlabel('Total Revenue')
-    ax1.set_ylabel('Product Category')
-    plt.tight_layout()
-    st.pyplot(fig1)
-    plt.close(fig1) # Tutup figure untuk menghemat memori
-
-    st.subheader('Kontribusi Persentase Kategori Produk Terhadap Total Revenue (Top 5 + Lainnya)')
+    
+    total_overall_sales = category_revenue['total_revenue'].sum()
+    category_revenue['contribution_percentage'] = (category_revenue['total_revenue'] / total_overall_sales) * 100
+    
+    # Prepare for donut chart (Top 5 + Others)
     top_5_categories = category_revenue.head(5)
     other_revenue = category_revenue['total_revenue'].iloc[5:].sum()
-    total_overall_sales = category_revenue['total_revenue'].sum()
-    other_percentage = (other_revenue / total_overall_sales) * 100
+    other_percentage = category_revenue['contribution_percentage'].iloc[5:].sum()
 
     pie_data = top_5_categories.copy()
     if not category_revenue.shape[0] <= 5:
@@ -129,167 +144,275 @@ try:
             pie_data,
             pd.DataFrame([{'product_category_name': 'Others', 'total_revenue': other_revenue, 'contribution_percentage': other_percentage}])
         ], ignore_index=True)
+    
+    return category_revenue, pie_data, None
 
-    fig2, ax2 = plt.subplots(figsize=(10, 10))
-    ax2.pie(pie_data['total_revenue'], labels=pie_data['product_category_name'], autopct='%1.1f%%', startangle=140, pctdistance=0.85)
-    centre_circle = plt.Circle((0,0),0.70,fc='white')
-    fig2.gca().add_artist(centre_circle)
-    ax2.set_title('Percentage Contribution of Product Categories to Total Revenue (Top 5 + Others)')
-    ax2.axis('equal')
-    plt.tight_layout()
-    st.pyplot(fig2)
-    plt.close(fig2)
+@st.cache_data
+def get_rfm_analysis(df, snapshot_date):
+    df_rfm_prep = df.copy()
 
-    # =========================
-    # 📊 2. RFM ANALYSIS
-    # =========================
-    st.header('2. Segmentasi Pelanggan Berdasarkan RFM')
+    # Ensure relevant columns are not null for RFM calculation
+    df_rfm_prep = df_rfm_prep.dropna(subset=['customer_unique_id', 'order_purchase_timestamp', 'order_id', 'price'])
 
-    # Gabungkan data untuk analisis RFM (mirip dengan notebook)
-    customers_orders_items_df = pd.merge(
-        orders.rename(columns={'customer_id': 'customer_id_orders'}),
-        order_items,
-        on='order_id',
-        how='inner'
-    )
-
-    customers_orders_items_df = pd.merge(
-        customers,
-        customers_orders_items_df,
-        left_on='customer_id',
-        right_on='customer_id_orders',
-        how='inner'
-    )
-
-    customers_orders_items_df['order_purchase_timestamp'] = pd.to_datetime(customers_orders_items_df['order_purchase_timestamp'])
-
-    snapshot_date = customers_orders_items_df['order_purchase_timestamp'].max() + dt.timedelta(days=1)
+    # Filter for the last 12 months leading up to the snapshot date
     last_12_months_start = snapshot_date - dt.timedelta(days=365)
-    df_12_months = customers_orders_items_df[customers_orders_items_df['order_purchase_timestamp'] >= last_12_months_start]
+    df_12_months = df_rfm_prep[(df_rfm_prep['order_purchase_timestamp'] >= last_12_months_start) & 
+                                (df_rfm_prep['order_purchase_timestamp'] < snapshot_date)].copy() # Ensure purchases before snapshot_date
 
-    rfm_df = df_12_months.groupby('customer_unique_id').agg({
-        'order_purchase_timestamp': lambda date: (snapshot_date - date.max()).days,
-        'order_id': 'nunique',
-        'price': 'sum'
-    })
+    if df_12_months.empty:
+        return pd.DataFrame(), pd.DataFrame(), "No data available for RFM calculation in the selected period."
 
-    rfm_df.rename(columns={'order_purchase_timestamp': 'Recency',
-                           'order_id': 'Frequency',
-                           'price': 'Monetary'},
-                  inplace=True)
+    rfm_df = df_12_months.groupby('customer_unique_id').agg(
+        Recency=('order_purchase_timestamp', lambda date: (snapshot_date - date.max()).days),
+        Frequency=('order_id', 'nunique'),
+        Monetary=('price', 'sum')
+    )
+    
+    rfm_df = rfm_df[rfm_df['Monetary'] > 0] # Exclude customers with 0 monetary value
 
-    # Menentukan RFM Score (menggunakan 5 kuantil, dengan penanganan duplikat)
+    if rfm_df.empty:
+        return pd.DataFrame(), pd.DataFrame(), "No customers with monetary value found in the selected period for RFM."
+
+    # Ensure enough unique values for qcut
+    # For Recency: higher value is worse, so invert score
     rfm_df['R_Score'] = pd.qcut(rfm_df['Recency'], 5, labels=False, duplicates='drop')
     max_r_score_idx = rfm_df['R_Score'].max()
     rfm_df['R_Score'] = max_r_score_idx - rfm_df['R_Score'] + 1
 
+    # For Frequency and Monetary: higher value is better
     rfm_df['F_Score'] = pd.qcut(rfm_df['Frequency'], 5, labels=False, duplicates='drop') + 1
     rfm_df['M_Score'] = pd.qcut(rfm_df['Monetary'], 5, labels=False, duplicates='drop') + 1
 
     rfm_df['RFM_Segment'] = rfm_df['R_Score'].astype(str) + rfm_df['F_Score'].astype(str) + rfm_df['M_Score'].astype(str)
     rfm_df['RFM_Score'] = rfm_df[['R_Score', 'F_Score', 'M_Score']].sum(axis=1)
 
-    # Contoh definisi segmen berdasarkan skor (seperti di notebook):
-    def rfm_level(df):
-        if df['R_Score'] == 5 and df['F_Score'] == 5 and df['M_Score'] == 5:
+    def rfm_level(df_row):
+        if df_row['R_Score'] == 5 and df_row['F_Score'] == 5 and df_row['M_Score'] == 5:
             return 'Champions'
-        elif df['R_Score'] == 5 and df['F_Score'] == 5:
+        elif df_row['R_Score'] == 5 and df_row['F_Score'] == 5:
             return 'Loyal Customers'
-        elif df['R_Score'] == 5 and df['M_Score'] == 5:
+        elif df_row['R_Score'] == 5 and df_row['M_Score'] == 5:
             return 'Big Spenders'
-        elif df['R_Score'] == 5 and df['F_Score'] == 1:
+        elif df_row['R_Score'] == 5 and df_row['F_Score'] == 1:
             return 'New Customers'
-        elif df['R_Score'] == 1 and df['F_Score'] == 1 and df['M_Score'] == 1:
+        elif df_row['R_Score'] == 1 and df_row['F_Score'] == 1 and df_row['M_Score'] == 1:
             return 'Lost Customers'
         else:
             return 'Others'
 
     rfm_df['Customer_Segment'] = rfm_df.apply(rfm_level, axis=1)
 
-    st.subheader('Distribusi RFM Score Pelanggan (12 Bulan Terakhir)')
-    fig3, ax3 = plt.subplots(figsize=(10, 6))
-    sns.histplot(rfm_df['RFM_Score'], bins=15, kde=True, ax=ax3)
-    ax3.set_title('Distribusi RFM Score Pelanggan (12 Bulan Terakhir)')
-    ax3.set_xlabel('RFM Score')
-    ax3.set_ylabel('Jumlah Pelanggan')
-    plt.tight_layout()
-    st.pyplot(fig3)
-    plt.close(fig3)
-
-    st.subheader('Top 10 Segmen RFM Berdasarkan Jumlah Pelanggan')
-    rfm_segment_counts = rfm_df['RFM_Segment'].value_counts().head(10)
-    fig4, ax4 = plt.subplots(figsize=(12, 6))
-    sns.barplot(x=rfm_segment_counts.index, y=rfm_segment_counts.values, palette='coolwarm', hue=rfm_segment_counts.index, legend=False, ax=ax4)
-    ax4.set_title('Top 10 Segmen RFM Berdasarkan Jumlah Pelanggan')
-    ax4.set_xlabel('RFM Segment')
-    ax4.set_ylabel('Jumlah Pelanggan')
-    ax4.tick_params(axis='x', rotation=45)
-    plt.tight_layout()
-    st.pyplot(fig4)
-    plt.close(fig4)
-
-    st.subheader('Distribusi Segmen Pelanggan RFM Kustom')
-    fig5, ax5 = plt.subplots(figsize=(10, 7))
-    sns.countplot(y='Customer_Segment', data=rfm_df, order=rfm_df['Customer_Segment'].value_counts().index, palette='viridis', hue='Customer_Segment', legend=False, ax=ax5)
-    ax5.set_title('Distribusi Segmen Pelanggan RFM Kustom')
-    ax5.set_xlabel('Jumlah Pelanggan')
-    ax5.set_ylabel('Segmen Pelanggan')
-    plt.tight_layout()
-    st.pyplot(fig5)
-    plt.close(fig5)
-
-    # =========================
-    # 📊 3. Geographical Analysis for Big Spenders
-    # =========================
-    st.header('3. Analisis Geografis Pelanggan "Big Spenders"')
-
+    # Merge RFM with customer geographical data
     rfm_geo_df = pd.merge(
         rfm_df,
-        customers[['customer_unique_id', 'customer_city', 'customer_state']],
-        on='customer_unique_id',
+        df[['customer_unique_id', 'customer_city', 'customer_state']].drop_duplicates(subset=['customer_unique_id']),
+        left_index=True,
+        right_on='customer_unique_id',
         how='left'
     )
+    
+    return rfm_df, rfm_geo_df, None
 
-    # Filter 'Big Spenders' berdasarkan definisi dari notebook
-    big_spenders = rfm_geo_df[rfm_geo_df['Customer_Segment'] == 'Big Spenders']
 
-    st.subheader('Top 10 Kota Pelanggan Big Spenders')
-    fig6, ax6 = plt.subplots(figsize=(12, 7))
-    sns.barplot(
-        x=big_spenders['customer_city'].value_counts().head(10).index,
-        y=big_spenders['customer_city'].value_counts().head(10).values,
-        palette='magma',
-        hue=big_spenders['customer_city'].value_counts().head(10).index,
-        legend=False,
-        ax=ax6
+# --- Sidebar Filters ---
+st.sidebar.header("Filter Options")
+
+# --- Revenue Analysis Filters ---
+st.sidebar.subheader("Revenue Analysis (Pertanyaan 1)")
+available_years = sorted(main_data_df['order_purchase_timestamp'].dt.year.dropna().unique().astype(int).tolist())
+selected_year_revenue = st.sidebar.selectbox(
+    "Pilih Tahun untuk Analisis Revenue", 
+    options=available_years,
+    index=available_years.index(2017) if 2017 in available_years else (len(available_years) - 1 if available_years else 0) # Default to 2017 or last year if 2017 not found, or 0 if empty
+)
+num_top_categories_revenue = st.sidebar.slider(
+    "Jumlah Kategori Teratas (Revenue)", 
+    min_value=5, max_value=len(main_data_df['product_category_name'].unique().dropna()), value=10
+)
+
+# --- RFM Analysis Filters ---
+st.sidebar.subheader("RFM Segmentation (Pertanyaan 2)")
+# Default RFM snapshot date to end of 2018 as per notebook
+default_rfm_date = dt.date(2019, 1, 1)
+selected_snapshot_date = st.sidebar.date_input(
+    "Tanggal Snapshot Analisis RFM", 
+    value=default_rfm_date
+)
+
+
+# --- Perform Analyses based on Filters ---
+category_revenue, pie_data, revenue_error_msg = get_revenue_analysis(main_data_df, selected_year_revenue)
+rfm_df, rfm_geo_df, rfm_error_msg = get_rfm_analysis(main_data_df, selected_snapshot_date)
+
+
+# --- Main Content - Revenue Analysis ---
+st.header("1. Kategori Produk dengan Revenue Terbesar")
+st.markdown("Analisis ini menunjukkan kategori produk yang menghasilkan revenue terbesar untuk tahun yang dipilih, beserta kontribusi persentasenya terhadap total penjualan.")
+
+if revenue_error_msg:
+    st.warning(revenue_error_msg)
+elif not category_revenue.empty:
+    st.subheader(f"Top {num_top_categories_revenue} Kategori Produk berdasarkan Revenue ({selected_year_revenue})")
+    st.dataframe(category_revenue.head(num_top_categories_revenue))
+
+    col1_rev, col2_rev = st.columns(2)
+
+    with col1_rev:
+        fig_bar_rev, ax_bar_rev = plt.subplots(figsize=(10, 6))
+        sns.barplot(
+            x='total_revenue', y='product_category_name', 
+            data=category_revenue.head(num_top_categories_revenue), 
+            palette='viridis', ax=ax_bar_rev
+        )
+        ax_bar_rev.set_title(f'Top {num_top_categories_revenue} Kategori Produk berdasarkan Revenue ({selected_year_revenue})')
+        ax_bar_rev.set_xlabel('Total Revenue')
+        ax_bar_rev.set_ylabel('Kategori Produk')
+        st.pyplot(fig_bar_rev)
+
+    with col2_rev:
+        fig_pie_rev, ax_pie_rev = plt.subplots(figsize=(8, 8))
+        ax_pie_rev.pie(
+            pie_data['contribution_percentage'], 
+            labels=pie_data['product_category_name'], 
+            autopct='%1.1f%%', startangle=140, pctdistance=0.85
+        )
+        centre_circle = plt.Circle((0,0),0.70,fc='white')
+        fig_pie_rev.gca().add_artist(centre_circle)
+        ax_pie_rev.set_title(f'Kontribusi Persentase Kategori Produk terhadap Total Revenue ({selected_year_revenue} - Top 5 + Lainnya)')
+        ax_pie_rev.axis('equal') # Equal aspect ratio ensures that pie is drawn as a circle.
+        st.pyplot(fig_pie_rev)
+else:
+    st.info("Tidak ada data revenue untuk ditampilkan berdasarkan filter.")
+
+
+# --- Main Content - RFM Segmentation ---
+st.header("2. Segmentasi Pelanggan Berdasarkan RFM")
+st.markdown(f"Segmentasi pelanggan berdasarkan RFM (Recency, Frequency, Monetary) untuk 12 bulan terakhir sebelum tanggal snapshot **{selected_snapshot_date}**.")
+
+if rfm_error_msg:
+    st.warning(rfm_error_msg)
+elif not rfm_df.empty:
+    # RFM specific filters in sidebar
+    st.sidebar.subheader("Filter Tampilan RFM")
+    all_customer_segments = rfm_df['Customer_Segment'].unique().tolist()
+    selected_customer_segments = st.sidebar.multiselect(
+        "Pilih Segmen Pelanggan RFM",
+        options=all_customer_segments,
+        default=all_customer_segments # Select all by default
     )
-    ax6.set_title('Top 10 Kota Pelanggan Big Spenders')
-    ax6.set_xlabel('Kota')
-    ax6.set_ylabel('Jumlah Pelanggan Big Spenders')
-    ax6.tick_params(axis='x', rotation=45)
-    plt.tight_layout()
-    st.pyplot(fig6)
-    plt.close(fig6)
+    
+    filtered_rfm_df = rfm_df[rfm_df['Customer_Segment'].isin(selected_customer_segments)]
+    
+    st.subheader("Distribusi RFM Scores")
+    fig_hist_rfm, ax_hist_rfm = plt.subplots(figsize=(10, 6))
+    sns.histplot(filtered_rfm_df['RFM_Score'], bins=15, kde=True, ax=ax_hist_rfm)
+    ax_hist_rfm.set_title(f'Distribusi RFM Score Pelanggan (Snapshot {selected_snapshot_date})')
+    ax_hist_rfm.set_xlabel('RFM Score')
+    ax_hist_rfm.set_ylabel('Jumlah Pelanggan')
+    st.pyplot(fig_hist_rfm)
 
-    st.subheader('Top 10 Negara Bagian Pelanggan Big Spenders')
-    fig7, ax7 = plt.subplots(figsize=(10, 6))
-    sns.barplot(
-        x=big_spenders['customer_state'].value_counts().head(10).index,
-        y=big_spenders['customer_state'].value_counts().head(10).values,
-        palette='viridis',
-        hue=big_spenders['customer_state'].value_counts().head(10).index,
-        legend=False,
-        ax=ax7
+    col1_rfm, col2_rfm = st.columns(2)
+
+    with col1_rfm:
+        st.subheader("Top 10 Segmen RFM Berdasarkan Jumlah Pelanggan")
+        rfm_segment_counts = filtered_rfm_df['RFM_Segment'].value_counts().head(10)
+        if not rfm_segment_counts.empty:
+            fig_bar_segment, ax_bar_segment = plt.subplots(figsize=(12, 6))
+            sns.barplot(x=rfm_segment_counts.index, y=rfm_segment_counts.values, palette='coolwarm', ax=ax_bar_segment)
+            ax_bar_segment.set_title(f'Top 10 Segmen RFM Berdasarkan Jumlah Pelanggan (Snapshot {selected_snapshot_date})')
+            ax_bar_segment.set_xlabel('Segmen RFM')
+            ax_bar_segment.set_ylabel('Jumlah Pelanggan')
+            ax_bar_segment.tick_params(axis='x', rotation=45)
+            st.pyplot(fig_bar_segment)
+        else:
+            st.info("Tidak ada segmen RFM untuk ditampilkan.")
+
+    with col2_rfm:
+        st.subheader("Distribusi Segmen Pelanggan Kustom")
+        customer_segment_counts = filtered_rfm_df['Customer_Segment'].value_counts()
+        if not customer_segment_counts.empty:
+            fig_bar_cust_segment, ax_bar_cust_segment = plt.subplots(figsize=(10, 7))
+            sns.countplot(y='Customer_Segment', data=filtered_rfm_df, order=customer_segment_counts.index, palette='viridis', ax=ax_bar_cust_segment)
+            ax_bar_cust_segment.set_title(f'Distribusi Segmen Pelanggan RFM Kustom (Snapshot {selected_snapshot_date})')
+            ax_bar_cust_segment.set_xlabel('Jumlah Pelanggan')
+            ax_bar_cust_segment.set_ylabel('Segmen Pelanggan')
+            st.pyplot(fig_bar_cust_segment)
+        else:
+            st.info("Tidak ada segmen pelanggan kustom untuk ditampilkan.")
+            
+    st.subheader("Statistik RFM per Segmen (Paling Bernilai)")
+    # Using the original rfm_df for stats to show overall valuable segments, not just filtered ones for plots
+    valuable_segments_stats = rfm_df.groupby('RFM_Segment').agg(
+        Recency_mean=('Recency', 'mean'),
+        Frequency_mean=('Frequency', 'mean'),
+        Monetary_mean=('Monetary', 'mean'),
+        Customer_Count=('RFM_Segment', 'count')
+    ).sort_values('Monetary_mean', ascending=False).head(10)
+    st.dataframe(valuable_segments_stats)
+
+else:
+    st.info("Tidak ada data RFM untuk ditampilkan berdasarkan filter.")
+
+# --- Main Content - Advanced Analysis (Big Spenders Geo) ---
+st.header("3. Analisis Lanjutan: Geografi Pelanggan 'Big Spenders'")
+st.markdown("Visualisasi ini menunjukkan distribusi geografis pelanggan dalam segmen 'Big Spenders'.")
+
+if rfm_error_msg: # Re-use RFM error check as big_spenders depends on rfm_geo_df
+    st.warning(rfm_error_msg)
+elif not rfm_geo_df.empty:
+    st.sidebar.subheader("Filter Geografi Pelanggan")
+    all_segments_for_geo = rfm_geo_df['Customer_Segment'].unique().tolist()
+    
+    # Ensure 'Big Spenders' is in the list of segments, otherwise default to first available
+    default_geo_segment_index = 0
+    if 'Big Spenders' in all_segments_for_geo:
+        default_geo_segment_index = all_segments_for_geo.index('Big Spenders')
+
+    selected_geo_segment = st.sidebar.selectbox(
+        "Pilih Segmen Pelanggan untuk Analisis Geografis",
+        options=all_segments_for_geo,
+        index=default_geo_segment_index
     )
-    ax7.set_title('Top 10 Negara Bagian Pelanggan Big Spenders')
-    ax7.set_xlabel('Negara Bagian')
-    ax7.set_ylabel('Jumlah Pelanggan Big Spenders')
-    ax7.tick_params(axis='x', rotation=45)
-    plt.tight_layout()
-    st.pyplot(fig7)
-    plt.close(fig7)
+    
+    filtered_big_spenders = rfm_geo_df[rfm_geo_df['Customer_Segment'] == selected_geo_segment].copy()
+    
+    num_top_geo = st.sidebar.slider(
+        f"Jumlah Top Kota/Negara Bagian untuk '{selected_geo_segment}'", 
+        min_value=5, max_value=20, value=10
+    )
 
-except FileNotFoundError:
-    st.error("Beberapa file data tidak ditemukan. Pastikan 'orders_dataset.csv', 'order_items_dataset.csv', 'products_dataset.csv', dan 'customers_dataset.csv' ada di direktori yang sama dengan `app.py`.")
-except Exception as e:
-    st.error(f"Terjadi kesalahan saat memuat atau memproses data: {e}")
+    if not filtered_big_spenders.empty:
+        col1_geo, col2_geo = st.columns(2)
+
+        with col1_geo:
+            st.subheader(f"Top {num_top_geo} Kota Pelanggan '{selected_geo_segment}'")
+            city_counts = filtered_big_spenders['customer_city'].value_counts().head(num_top_geo)
+            if not city_counts.empty:
+                fig_city, ax_city = plt.subplots(figsize=(12, 7))
+                sns.barplot(x=city_counts.index, y=city_counts.values, palette='magma', ax=ax_city)
+                ax_city.set_title(f'Top {num_top_geo} Kota Pelanggan {selected_geo_segment}')
+                ax_city.set_xlabel('Kota')
+                ax_city.set_ylabel(f'Jumlah Pelanggan {selected_geo_segment}')
+                ax_city.tick_params(axis='x', rotation=45, ha='right')
+                st.pyplot(fig_city)
+            else:
+                st.info(f"Tidak ada data kota untuk segmen '{selected_geo_segment}'.")
+
+
+        with col2_geo:
+            st.subheader(f"Top {num_top_geo} Negara Bagian Pelanggan '{selected_geo_segment}'")
+            state_counts = filtered_big_spenders['customer_state'].value_counts().head(num_top_geo)
+            if not state_counts.empty:
+                fig_state, ax_state = plt.subplots(figsize=(10, 6))
+                sns.barplot(x=state_counts.index, y=state_counts.values, palette='viridis', ax=ax_state)
+                ax_state.set_title(f'Top {num_top_geo} Negara Bagian Pelanggan {selected_geo_segment}')
+                ax_state.set_xlabel('Negara Bagian')
+                ax_state.set_ylabel(f'Jumlah Pelanggan {selected_geo_segment}')
+                ax_state.tick_params(axis='x', rotation=45, ha='right')
+                st.pyplot(fig_state)
+            else:
+                st.info(f"Tidak ada data negara bagian untuk segmen '{selected_geo_segment}'.")
+    else:
+        st.info(f"Tidak ada pelanggan dalam segmen '{selected_geo_segment}' untuk ditampilkan.")
+else:
+    st.info("Tidak ada data RFM geografis untuk ditampilkan berdasarkan filter.")
