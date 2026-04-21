@@ -4,6 +4,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import datetime as dt
+import os
+
+def load_data():
+    base_path = os.path.dirname(os.path.abspath(__file__))
+    file_path = os.path.join(base_path, 'main_data.csv')
+    
+    print("DEBUG PATH:", file_path)  # opsional
+    df = pd.read_csv(file_path)
+    return df
 
 # --- Page Configuration ---
 st.set_page_config(layout="wide", page_title="E-Commerce Data Analysis Dashboard")
@@ -13,7 +22,7 @@ st.title("E-Commerce Data Analysis Dashboard")
 # --- Data Loading and Preprocessing ---
 @st.cache_data
 def load_data():
-    df = pd.read_csv('Dashboard/main_data.csv')
+    df = pd.read_csv('main_data.csv')
     
     # Convert date columns (assuming these are the relevant ones from the notebook)
     date_cols = [
