@@ -13,7 +13,7 @@ st.title("E-Commerce Data Analysis Dashboard")
 # --- Data Loading and Preprocessing ---
 @st.cache_data
 def load_data():
-    df = pd.read_csv('main_data.csv')
+    df = pd.read_csv('Dashboard/main_data.csv')
     
     # Convert date columns (assuming these are the relevant ones from the notebook)
     date_cols = [
